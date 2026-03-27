@@ -81,7 +81,7 @@ export interface VercelModelOptions extends Partial<VercelModelConfig> {
   /**
    * A LanguageModelV3 instance from any Vercel provider.
    */
-  model: LanguageModelV3
+  provider: LanguageModelV3
 }
 
 /**
@@ -98,7 +98,7 @@ export interface VercelModelOptions extends Partial<VercelModelConfig> {
  * import { bedrock } from '@ai-sdk/amazon-bedrock'
  *
  * const agent = new Agent({
- *   model: new VercelModel({ model: bedrock('us.anthropic.claude-sonnet-4-20250514-v1:0') }),
+ *   model: new VercelModel({ provider: bedrock('us.anthropic.claude-sonnet-4-20250514-v1:0') }),
  * })
  *
  * for await (const event of agent.stream('Hello!')) {
@@ -109,7 +109,7 @@ export interface VercelModelOptions extends Partial<VercelModelConfig> {
  * ```
  */
 export class VercelModel extends Model<VercelModelConfig> {
-  private _model: LanguageModelV3
+  private _provider: LanguageModelV3
   private _config: VercelModelConfig
 
   /**
@@ -119,10 +119,10 @@ export class VercelModel extends Model<VercelModelConfig> {
    */
   constructor(options: VercelModelOptions) {
     super()
-    const { model, modelId, maxTokens, ...callSettings } = options
-    this._model = model
+    const { provider, modelId, maxTokens, ...callSettings } = options
+    this._provider = provider
     this._config = {
-      modelId: modelId ?? model.modelId,
+      modelId: modelId ?? provider.modelId,
       ...(maxTokens != null && { maxTokens }),
       ...callSettings,
     }
@@ -153,7 +153,7 @@ export class VercelModel extends Model<VercelModelConfig> {
 
     let result
     try {
-      result = await this._model.doStream(callOptions)
+      result = await this._provider.doStream(callOptions)
     } catch (error) {
       throw classifyError(error)
     }

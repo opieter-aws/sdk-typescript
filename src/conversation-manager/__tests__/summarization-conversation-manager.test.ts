@@ -4,6 +4,7 @@ import { ContextWindowOverflowError, Message, TextBlock, ToolUseBlock, ToolResul
 import { AfterModelCallEvent } from '../../hooks/events.js'
 import { createMockAgent, invokeTrackedHook } from '../../__fixtures__/agent-helpers.js'
 import { MockMessageModel } from '../../__fixtures__/mock-message-model.js'
+import type { Model } from '../../models/model.js'
 
 function textMsg(role: 'user' | 'assistant', text: string): Message {
   return new Message({ role, content: [new TextBlock(text)] })
@@ -16,10 +17,8 @@ function makeMessages(count: number): Message[] {
 describe('SummarizationConversationManager', () => {
   describe('constructor', () => {
     it('clamps summaryRatio to [0.1, 0.8]', () => {
-      const model = new MockMessageModel()
-      const agent = createMockAgent({ extra: { model } })
-      expect((new SummarizationConversationManager({ agent, summaryRatio: 0 }) as any)._summaryRatio).toBe(0.1)
-      expect((new SummarizationConversationManager({ agent, summaryRatio: 1.0 }) as any)._summaryRatio).toBe(0.8)
+      expect((new SummarizationConversationManager({ summaryRatio: 0 }) as any)._summaryRatio).toBe(0.1)
+      expect((new SummarizationConversationManager({ summaryRatio: 1.0 }) as any)._summaryRatio).toBe(0.8)
     })
   })
 
@@ -29,7 +28,6 @@ describe('SummarizationConversationManager', () => {
       model.addTurn({ type: 'textBlock', text: 'Summary of conversation' })
 
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         summaryRatio: 0.5,
         preserveRecentMessages: 2,
       })
@@ -39,6 +37,7 @@ describe('SummarizationConversationManager', () => {
 
       const result = await manager.reduce({
         agent: mockAgent,
+        model: model as unknown as Model,
         error: new ContextWindowOverflowError('overflow'),
       })
 
@@ -54,10 +53,59 @@ describe('SummarizationConversationManager', () => {
       expect(mockAgent.messages.slice(-2)).toEqual(lastTwo)
     })
 
+    it('uses the config model over the reduce model when provided', async () => {
+      const configModel = new MockMessageModel()
+      configModel.addTurn({ type: 'textBlock', text: 'Config model summary' })
+      const reduceModel = new MockMessageModel()
+      reduceModel.addTurn({ type: 'textBlock', text: 'Reduce model summary' })
+
+      const manager = new SummarizationConversationManager({
+        model: configModel as unknown as Model,
+        summaryRatio: 0.5,
+        preserveRecentMessages: 2,
+      })
+      const messages = makeMessages(20)
+      const mockAgent = createMockAgent({ messages })
+
+      await manager.reduce({
+        agent: mockAgent,
+        model: reduceModel as unknown as Model,
+        error: new ContextWindowOverflowError('overflow'),
+      })
+
+      expect(mockAgent.messages[0]!.content[0]!).toEqual({
+        type: 'textBlock',
+        text: 'Config model summary',
+      })
+    })
+
+    it('uses the config model when no reduce model is provided', async () => {
+      const configModel = new MockMessageModel()
+      configModel.addTurn({ type: 'textBlock', text: 'Config model summary' })
+
+      const manager = new SummarizationConversationManager({
+        model: configModel as unknown as Model,
+        summaryRatio: 0.5,
+        preserveRecentMessages: 2,
+      })
+      const messages = makeMessages(20)
+      const mockAgent = createMockAgent({ messages })
+
+      const result = await manager.reduce({
+        agent: mockAgent,
+        error: new ContextWindowOverflowError('overflow'),
+      })
+
+      expect(result).toBe(true)
+      expect(mockAgent.messages[0]!.content[0]!).toEqual({
+        type: 'textBlock',
+        text: 'Config model summary',
+      })
+    })
+
     it('returns false when there are not enough messages to summarize', async () => {
       const model = new MockMessageModel()
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         preserveRecentMessages: 10,
       })
       const messages = makeMessages(8)
@@ -65,6 +113,7 @@ describe('SummarizationConversationManager', () => {
 
       const result = await manager.reduce({
         agent: mockAgent,
+        model: model as unknown as Model,
         error: new ContextWindowOverflowError('overflow'),
       })
 
@@ -77,14 +126,15 @@ describe('SummarizationConversationManager', () => {
       model.addTurn(new Error('model failed'))
 
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         summaryRatio: 0.5,
         preserveRecentMessages: 2,
       })
       const overflowError = new ContextWindowOverflowError('overflow')
       const mockAgent = createMockAgent({ messages: makeMessages(20) })
 
-      const thrown = await manager.reduce({ agent: mockAgent, error: overflowError }).catch((e: unknown) => e)
+      const thrown = await manager
+        .reduce({ agent: mockAgent, model: model as unknown as Model, error: overflowError })
+        .catch((e: unknown) => e)
       expect(thrown).toBeInstanceOf(Error)
       expect((thrown as Error).message).toBe('model failed')
       expect((thrown as Error).cause).toBe(overflowError)
@@ -99,14 +149,15 @@ describe('SummarizationConversationManager', () => {
       } as any)
 
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         summaryRatio: 0.5,
         preserveRecentMessages: 2,
       })
       const overflowError = new ContextWindowOverflowError('overflow')
       const mockAgent = createMockAgent({ messages: makeMessages(20) })
 
-      const thrown = await manager.reduce({ agent: mockAgent, error: overflowError }).catch((e: unknown) => e)
+      const thrown = await manager
+        .reduce({ agent: mockAgent, model: model as unknown as Model, error: overflowError })
+        .catch((e: unknown) => e)
       expect(thrown).toBeInstanceOf(Error)
       expect((thrown as Error).message).toBe('string error')
       expect((thrown as Error).cause).toBe(overflowError)
@@ -119,7 +170,6 @@ describe('SummarizationConversationManager', () => {
 
       const customPrompt = 'Custom summarization prompt'
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         summaryRatio: 0.5,
         preserveRecentMessages: 2,
         summarizationSystemPrompt: customPrompt,
@@ -130,6 +180,7 @@ describe('SummarizationConversationManager', () => {
 
       await manager.reduce({
         agent: mockAgent,
+        model: model as unknown as Model,
         error: new ContextWindowOverflowError('overflow'),
       })
 
@@ -150,7 +201,6 @@ describe('SummarizationConversationManager', () => {
       model.addTurn({ type: 'textBlock', text: 'Summary' })
 
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         summaryRatio: 0.8,
         preserveRecentMessages: 18,
       })
@@ -159,6 +209,7 @@ describe('SummarizationConversationManager', () => {
 
       const result = await manager.reduce({
         agent: mockAgent,
+        model: model as unknown as Model,
         error: new ContextWindowOverflowError('overflow'),
       })
 
@@ -175,7 +226,6 @@ describe('SummarizationConversationManager', () => {
       model.addTurn({ type: 'textBlock', text: 'Summary' })
 
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         summaryRatio: 0.3,
         preserveRecentMessages: 2,
       })
@@ -199,6 +249,7 @@ describe('SummarizationConversationManager', () => {
 
       const result = await manager.reduce({
         agent: mockAgent,
+        model: model as unknown as Model,
         error: new ContextWindowOverflowError('overflow'),
       })
 
@@ -210,7 +261,6 @@ describe('SummarizationConversationManager', () => {
     it('throws when no valid split point exists', async () => {
       const model = new MockMessageModel()
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         summaryRatio: 0.5,
         preserveRecentMessages: 0,
       })
@@ -229,7 +279,11 @@ describe('SummarizationConversationManager', () => {
       const mockAgent = createMockAgent({ messages })
 
       await expect(
-        manager.reduce({ agent: mockAgent, error: new ContextWindowOverflowError('overflow') })
+        manager.reduce({
+          agent: mockAgent,
+          model: model as unknown as Model,
+          error: new ContextWindowOverflowError('overflow'),
+        })
       ).rejects.toThrow('Unable to find valid split point for summarization')
     })
   })
@@ -242,7 +296,6 @@ describe('SummarizationConversationManager', () => {
       model.addTurn({ type: 'textBlock', text: 'Summary' })
 
       const manager = new SummarizationConversationManager({
-        agent: createMockAgent({ extra: { model } }),
         summaryRatio: 0.5,
         preserveRecentMessages: 2,
       })
@@ -253,6 +306,7 @@ describe('SummarizationConversationManager', () => {
       manager.initAgent(pluginAgent)
       const event = new AfterModelCallEvent({
         agent,
+        model: model as unknown as Model,
         error: new ContextWindowOverflowError('overflow'),
       })
       await invokeTrackedHook(pluginAgent, event)

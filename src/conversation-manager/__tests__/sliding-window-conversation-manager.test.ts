@@ -19,7 +19,7 @@ async function triggerContextOverflow(
 ): Promise<{ retry?: boolean }> {
   const pluginAgent = createMockAgent()
   manager.initAgent(pluginAgent)
-  const event = new AfterModelCallEvent({ agent, error })
+  const event = new AfterModelCallEvent({ agent, model: {} as any, error })
   await invokeTrackedHook(pluginAgent, event)
   return event
 }
@@ -623,7 +623,7 @@ describe('SlidingWindowConversationManager', () => {
 
       // The base class hook does not set event.retry when reduce returns false,
       // so the original error propagates out of the hook chain
-      const event = new AfterModelCallEvent({ agent: mockAgent, error: originalError })
+      const event = new AfterModelCallEvent({ agent: mockAgent, model: {} as any, error: originalError })
       const pluginAgent = createMockAgent()
       manager.initAgent(pluginAgent)
       await invokeTrackedHook(pluginAgent, event)

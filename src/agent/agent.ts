@@ -711,7 +711,7 @@ export class Agent implements LocalAgent, InvokableAgent {
       streamOptions.toolChoice = toolChoice
     }
 
-    yield new BeforeModelCallEvent({ agent: this })
+    yield new BeforeModelCallEvent({ agent: this, model: this.model })
 
     // Start model span within loop span context
     const modelId = this.model.modelId
@@ -750,7 +750,7 @@ export class Agent implements LocalAgent, InvokableAgent {
         ...(result.redaction && { redaction: result.redaction }),
       }
 
-      const afterModelCallEvent = new AfterModelCallEvent({ agent: this, stopData })
+      const afterModelCallEvent = new AfterModelCallEvent({ agent: this, model: this.model, stopData })
       yield afterModelCallEvent
 
       if (afterModelCallEvent.retry) {
@@ -765,7 +765,7 @@ export class Agent implements LocalAgent, InvokableAgent {
       this._tracer.endModelInvokeSpan(modelSpan, { error: modelError })
 
       // Create error event
-      const errorEvent = new AfterModelCallEvent({ agent: this, error: modelError })
+      const errorEvent = new AfterModelCallEvent({ agent: this, model: this.model, error: modelError })
 
       // Yield error event - stream will invoke hooks
       yield errorEvent

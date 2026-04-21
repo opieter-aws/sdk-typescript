@@ -69,6 +69,28 @@ export class AnthropicModel extends Model<AnthropicModelConfig> {
     return this._config
   }
 
+  /**
+   * Estimates token count using Anthropic's countTokens API.
+   * Falls back to the base class heuristic on failure.
+   */
+  async estimateTokens(messages: Message[], options?: StreamOptions): Promise<number> {
+    try {
+      const request = this._formatRequest(messages, options)
+      const { messages: msgs, model, system, tools, tool_choice } = request
+      const response = await this._client.messages.countTokens({
+        messages: msgs,
+        model,
+        ...(system && { system }),
+        ...(tools && { tools }),
+        ...(tool_choice && { tool_choice }),
+      })
+      return response.input_tokens
+    } catch (error) {
+      logger.debug('anthropic countTokens failed, falling back to heuristic', { error })
+      return super.estimateTokens(messages, options)
+    }
+  }
+
   async *stream(messages: Message[], options?: StreamOptions): AsyncIterable<ModelStreamEvent> {
     try {
       const request = this._formatRequest(messages, options)

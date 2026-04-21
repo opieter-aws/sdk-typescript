@@ -17,6 +17,7 @@ import {
   type ConverseCommandOutput,
   ConverseStreamCommand,
   type ConverseStreamCommandInput,
+  CountTokensCommand,
   type ConverseStreamMetadataEvent as BedrockConverseStreamMetadataEvent,
   type ConverseStreamOutput,
   type InferenceConfiguration,
@@ -458,6 +459,31 @@ export class BedrockModel extends Model<BedrockModelConfig> {
    */
   getConfig(): BedrockModelConfig {
     return this._config
+  }
+
+  /**
+   * Estimates token count using Bedrock's CountTokens API.
+   * Falls back to the base class heuristic on failure.
+   */
+  async estimateTokens(messages: Message[], options?: StreamOptions): Promise<number> {
+    try {
+      const request = this._formatRequest(messages, options)
+      const command = new CountTokensCommand({
+        modelId: request.modelId!,
+        input: {
+          converse: {
+            messages: request.messages,
+            system: request.system,
+            toolConfig: request.toolConfig,
+          },
+        },
+      })
+      const response = await this._client.send(command)
+      return response.inputTokens!
+    } catch (error) {
+      logger.debug('bedrock CountTokens failed, falling back to heuristic', { error })
+      return super.estimateTokens(messages, options)
+    }
   }
 
   /**

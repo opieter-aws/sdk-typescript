@@ -181,6 +181,12 @@ export interface OpenAIModelOptions extends OpenAIModelConfig {
  * Implements the Model interface for OpenAI using the Chat Completions API.
  * Supports streaming responses, tool use, and comprehensive configuration.
  *
+ * Note: This provider uses the base class heuristic for `estimateTokens()`.
+ * OpenAI's token counting endpoint (`/v1/responses/input_tokens`) is only
+ * available for the Responses API, which uses a different input format than
+ * Chat Completions. A future Responses API provider would use
+ * `client.responses.inputTokens.count()` for native token counting.
+ *
  * @example
  * ```typescript
  * const provider = new OpenAIModel({

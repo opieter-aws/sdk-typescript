@@ -1148,4 +1148,43 @@ describe('GoogleModel', () => {
       expect(events[4]).toEqual({ type: 'modelMessageStopEvent', stopReason: 'toolUse' })
     })
   })
+
+  describe('estimateTokens', () => {
+    it('returns token count from Google countTokens API', async () => {
+      const mockClient = {
+        models: {
+          generateContentStream: vi.fn(),
+          countTokens: vi.fn().mockResolvedValue({ totalTokens: 33 }),
+        },
+      } as unknown as GoogleGenAI
+      const provider = new GoogleModel({ client: mockClient })
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
+
+      const result = await provider.estimateTokens(messages)
+
+      expect(result).toBe(33)
+      expect(mockClient.models.countTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'gemini-2.5-flash',
+          contents: expect.any(Array),
+        })
+      )
+    })
+
+    it('falls back to heuristic on API error', async () => {
+      const mockClient = {
+        models: {
+          generateContentStream: vi.fn(),
+          countTokens: vi.fn().mockRejectedValue(new Error('API error')),
+        },
+      } as unknown as GoogleGenAI
+      const provider = new GoogleModel({ client: mockClient })
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello world')] })]
+
+      const result = await provider.estimateTokens(messages)
+
+      // Falls back to heuristic: ceil(11/4) = 3
+      expect(result).toBe(3)
+    })
+  })
 })

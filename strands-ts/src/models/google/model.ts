@@ -22,6 +22,7 @@ import type { GoogleModelConfig, GoogleModelOptions, GoogleStreamState } from '.
 export type { GoogleModelConfig, GoogleModelOptions }
 import { classifyGoogleError } from './errors.js'
 import { formatMessages, mapChunkToEvents } from './adapters.js'
+import { logger } from '../../logging/logger.js'
 
 /**
  * Default Gemini model ID.
@@ -143,6 +144,27 @@ export class GoogleModel extends Model<GoogleModelConfig> {
    */
   getConfig(): GoogleModelConfig {
     return this._config
+  }
+
+  /**
+   * Estimates token count using Google's countTokens API.
+   * Falls back to the base class heuristic on failure.
+   */
+  async estimateTokens(messages: Message[], options?: StreamOptions): Promise<number> {
+    try {
+      const params = this._formatRequest(messages, options)
+      const response = await this._client.models.countTokens({
+        model: params.model,
+        contents: params.contents,
+        ...(params.config?.systemInstruction && {
+          config: { systemInstruction: params.config.systemInstruction },
+        }),
+      })
+      return response.totalTokens ?? 0
+    } catch (error) {
+      logger.debug('google countTokens failed, falling back to heuristic', { error })
+      return super.estimateTokens(messages, options)
+    }
   }
 
   /**

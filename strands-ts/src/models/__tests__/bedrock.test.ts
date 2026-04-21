@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { BedrockRuntimeClient, ConverseStreamCommand, ValidationException } from '@aws-sdk/client-bedrock-runtime'
+import {
+  BedrockRuntimeClient,
+  ConverseStreamCommand,
+  CountTokensCommand,
+  ValidationException,
+} from '@aws-sdk/client-bedrock-runtime'
 import { isNode } from '../../__fixtures__/environment.js'
 import { BedrockModel } from '../bedrock.js'
 import { ContextWindowOverflowError, ModelThrottledError } from '../../errors.js'
@@ -74,6 +79,7 @@ vi.mock('@aws-sdk/client-bedrock-runtime', async (importOriginal) => {
   // Mock command classes that the code under test will instantiate
   const ConverseStreamCommand = vi.fn()
   const ConverseCommand = vi.fn()
+  const CountTokensCommand = vi.fn()
 
   const mockSend = vi.fn(async (command: unknown) => {
     // Check which constructor was used to create the command object
@@ -111,6 +117,10 @@ vi.mock('@aws-sdk/client-bedrock-runtime', async (importOriginal) => {
       }
     }
 
+    if (command instanceof CountTokensCommand) {
+      return { inputTokens: 42 }
+    }
+
     throw new Error('Unhandled command type in mock')
   })
 
@@ -136,6 +146,7 @@ vi.mock('@aws-sdk/client-bedrock-runtime', async (importOriginal) => {
     }),
     ConverseStreamCommand,
     ConverseCommand,
+    CountTokensCommand,
     ValidationException: MockValidationException,
   }
 })
@@ -3946,6 +3957,50 @@ describe('BedrockModel', () => {
           })
         )
       })
+    })
+  })
+
+  describe('estimateTokens', () => {
+    it('returns token count from CountTokens API', async () => {
+      const mockCountTokensCommand = vi.mocked(CountTokensCommand)
+      mockBedrockClientImplementation({
+        send: async (command: unknown) => {
+          if (command instanceof mockCountTokensCommand) {
+            return { inputTokens: 42 }
+          }
+          throw new Error('Unexpected command')
+        },
+      })
+      const provider = new BedrockModel()
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
+
+      const result = await provider.estimateTokens(messages)
+
+      expect(result).toBe(42)
+      expect(mockCountTokensCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            converse: expect.objectContaining({
+              messages: [{ role: 'user', content: [{ text: 'Hello' }] }],
+            }),
+          }),
+        })
+      )
+    })
+
+    it('falls back to heuristic on API error', async () => {
+      mockBedrockClientImplementation({
+        send: async () => {
+          throw new Error('Service unavailable')
+        },
+      })
+      const provider = new BedrockModel()
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello world')] })]
+
+      const result = await provider.estimateTokens(messages)
+
+      // Falls back to heuristic: ceil(11/4) = 3
+      expect(result).toBe(3)
     })
   })
 

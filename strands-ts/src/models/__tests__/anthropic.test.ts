@@ -629,4 +629,43 @@ describe('AnthropicModel', () => {
       })
     })
   })
+
+  describe('estimateTokens', () => {
+    it('returns token count from Anthropic countTokens API', async () => {
+      const mockClient = {
+        messages: {
+          stream: vi.fn(),
+          countTokens: vi.fn().mockResolvedValue({ input_tokens: 55 }),
+        },
+      } as unknown as Anthropic
+      const provider = new AnthropicModel({ client: mockClient })
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello')] })]
+
+      const result = await provider.estimateTokens(messages)
+
+      expect(result).toBe(55)
+      expect(mockClient.messages.countTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'claude-sonnet-4-6',
+          messages: expect.any(Array),
+        })
+      )
+    })
+
+    it('falls back to heuristic on API error', async () => {
+      const mockClient = {
+        messages: {
+          stream: vi.fn(),
+          countTokens: vi.fn().mockRejectedValue(new Error('API error')),
+        },
+      } as unknown as Anthropic
+      const provider = new AnthropicModel({ client: mockClient })
+      const messages = [new Message({ role: 'user', content: [new TextBlock('Hello world')] })]
+
+      const result = await provider.estimateTokens(messages)
+
+      // Falls back to heuristic: ceil(11/4) = 3
+      expect(result).toBe(3)
+    })
+  })
 })

@@ -279,6 +279,19 @@ export { AgentTrace } from './telemetry/tracer.js'
 // Local Metrics
 export { AgentMetrics } from './telemetry/meter.js'
 
+// Memory
+export type {
+  KnowledgeStore,
+  MutableKnowledgeStore,
+  KnowledgeEntry,
+  Extractor,
+  ExtractedKnowledge,
+  MemoryManagerConfig,
+  StoreConfig,
+  IngestionConfig,
+} from './memory/index.js'
+export { InMemoryKnowledgeStore, FileKnowledgeStore, ModelExtractor, MemoryManager } from './memory/index.js'
+
 // Multi-agent orchestration
 export { Graph } from './multiagent/index.js'
 export { Swarm } from './multiagent/index.js'

@@ -68,6 +68,7 @@ import type { AgentAsToolOptions } from './agent-as-tool.js'
 
 import type { z } from 'zod'
 import { SessionManager } from '../session/session-manager.js'
+import { MemoryManager } from '../memory/memory-manager.js'
 import { Tracer } from '../telemetry/tracer.js'
 import { Meter } from '../telemetry/meter.js'
 import type { AttributeValue } from '@opentelemetry/api'
@@ -186,6 +187,10 @@ export type AgentConfig = {
    */
   sessionManager?: SessionManager
   /**
+   * Memory manager for long-term knowledge storage and retrieval.
+   */
+  memoryManager?: MemoryManager
+  /**
    * Custom trace attributes to include in all spans.
    * These attributes are merged with standard attributes in telemetry spans.
    * Telemetry must be enabled globally via telemetry.setupTracer() for these to take effect.
@@ -275,6 +280,11 @@ export class Agent implements LocalAgent, InvokableAgent {
    */
   public readonly sessionManager?: SessionManager | undefined
 
+  /**
+   * The memory manager for long-term knowledge storage and retrieval, if configured.
+   */
+  public readonly memoryManager?: MemoryManager | undefined
+
   private readonly _hooksRegistry: HookRegistryImplementation
   private readonly _pluginRegistry: PluginRegistry
   private _toolRegistry: ToolRegistry
@@ -307,6 +317,7 @@ export class Agent implements LocalAgent, InvokableAgent {
     this.id = config?.id ?? DEFAULT_AGENT_ID
     if (config?.description !== undefined) this.description = config.description
     this.sessionManager = config?.sessionManager
+    this.memoryManager = config?.memoryManager
 
     if (typeof config?.model === 'string') {
       this.model = new BedrockModel({ modelId: config.model })
@@ -357,6 +368,7 @@ export class Agent implements LocalAgent, InvokableAgent {
       this._conversationManager,
       ...retryStrategies,
       ...(config?.plugins ?? []),
+      ...(config?.memoryManager ? [config.memoryManager] : []),
       ...(config?.sessionManager ? [config.sessionManager] : []),
       new ModelPlugin(this.model),
     ])

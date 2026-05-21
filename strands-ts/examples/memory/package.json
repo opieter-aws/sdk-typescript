@@ -7,13 +7,19 @@
     "prepare": "npm ci --prefix ../../..",
     "clean": "rm -rf dist node_modules package-lock.json",
     "build": "tsc",
-    "start": "tsc && node dist/index.js"
+    "start": "tsc && node dist/index.js",
+    "start:in-memory": "tsc && node dist/in-memory.js",
+    "start:bedrock-kb": "tsc && node dist/bedrock-kb.js",
+    "start:agentcore-memory": "tsc && node dist/agentcore-memory.js",
+    "start:hindsight": "tsc && node dist/hindsight.js"
   },
   "workspaces": [
     "../../"
   ],
   "dependencies": {
-    "@strands-agents/sdk": "*"
+    "@strands-agents/sdk": "*",
+    "@aws-sdk/client-bedrock-agentcore": "^3.1050.0",
+    "@vectorize-io/hindsight-client": "^0.6.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

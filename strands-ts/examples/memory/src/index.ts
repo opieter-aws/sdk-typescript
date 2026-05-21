@@ -8,10 +8,17 @@
  *
  * Run: npm start
  */
-import { Agent, BedrockModel, FileKnowledgeStore, MemoryManager } from '@strands-agents/sdk'
+import { Agent, BedrockModel, FileKnowledgeStore, MemoryManager, configureLogging } from '@strands-agents/sdk'
 import * as path from 'node:path'
 
 async function main() {
+  configureLogging({
+    debug: (...args: unknown[]) => console.debug('[DEBUG]', ...args),
+    info: (...args: unknown[]) => console.info('[INFO]', ...args),
+    warn: (...args: unknown[]) => console.warn('[WARN]', ...args),
+    error: (...args: unknown[]) => console.error('[ERROR]', ...args),
+  })
+
   const model = new BedrockModel()
 
   // File-based store persists across runs
@@ -23,7 +30,6 @@ async function main() {
     stores: [
       {
         store: knowledgeStore,
-        namespace: 'user-preferences',
         limit: 5,
         ingestion: { trigger: 'tool' },
       },
@@ -38,6 +44,7 @@ async function main() {
       'Use search_memory to recall facts from past conversations.',
       'Use store_memory to save important facts about the user for later.',
       'Always check memory before answering questions about the user.',
+      'When searching memory, include all relevant keywords in a single query (e.g. "name dark mode Austin") — the search matches any of the words. When storing, pass all facts in a single store_memory call.',
     ].join('\n'),
   })
 
@@ -57,10 +64,10 @@ async function main() {
 
   // Turn 3: Verify persistence — search the store directly
   console.log('\n--- Direct store search (no agent) ---')
-  const results = await knowledgeStore.search('user-preferences', 'dark mode')
+  const results = await knowledgeStore.search('dark mode')
   console.log(`Found ${results.length} entries matching "dark mode":`)
   for (const entry of results) {
-    console.log(`  [${entry.id}] ${entry.content} (score: ${entry.score})`)
+    console.log(`  [${entry.id}] ${entry.content} (score: ${entry.metadata?.score})`)
     if (entry.metadata) console.log(`    metadata: ${JSON.stringify(entry.metadata)}`)
   }
 

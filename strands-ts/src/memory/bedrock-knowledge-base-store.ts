@@ -12,26 +12,29 @@ import {
 } from '@aws-sdk/client-bedrock-agent'
 import { v7 as uuidv7 } from 'uuid'
 
-import type { KnowledgeEntry, KnowledgeStore, MutableKnowledgeStore } from './types.js'
-import type { JSONValue } from '../types/json.js'
+import type { KnowledgeEntry, KnowledgeStore } from './types.js'
 
 export interface BedrockKnowledgeBaseStoreConfig {
   knowledgeBaseId: string
   dataSourceId?: string
+  scope?: string
+  scopeMetadataKey?: string
+  filter?: RetrievalFilter
   runtimeClientConfig?: BedrockAgentRuntimeClientConfig
   runtimeClient?: BedrockAgentRuntimeClient
   agentClientConfig?: BedrockAgentClientConfig
   agentClient?: BedrockAgentClient
-  namespaceMetadataKey?: string
 }
 
-export class BedrockKnowledgeBaseStore implements KnowledgeStore, MutableKnowledgeStore {
+export class BedrockKnowledgeBaseStore implements KnowledgeStore {
   private readonly _runtimeClient: BedrockAgentRuntimeClient
   private _agentClient: BedrockAgentClient | undefined
   private readonly _agentClientConfig: BedrockAgentClientConfig | undefined
   private readonly _knowledgeBaseId: string
   private readonly _dataSourceId: string | undefined
-  private readonly _namespaceMetadataKey: string
+  private readonly _scope: string | undefined
+  private readonly _scopeMetadataKey: string
+  private readonly _filter: RetrievalFilter | undefined
 
   constructor(config: BedrockKnowledgeBaseStoreConfig) {
     this._runtimeClient = config.runtimeClient ?? new BedrockAgentRuntimeClient(config.runtimeClientConfig ?? {})
@@ -39,16 +42,23 @@ export class BedrockKnowledgeBaseStore implements KnowledgeStore, MutableKnowled
     this._agentClientConfig = config.agentClientConfig
     this._knowledgeBaseId = config.knowledgeBaseId
     this._dataSourceId = config.dataSourceId
-    this._namespaceMetadataKey = config.namespaceMetadataKey ?? 'namespace'
+    this._scope = config.scope
+    this._scopeMetadataKey = config.scopeMetadataKey ?? 'namespace'
+
+    if (config.filter) {
+      this._filter = config.filter
+    } else if (config.scope) {
+      this._filter = {
+        equals: {
+          key: this._scopeMetadataKey,
+          value: config.scope,
+        },
+      }
+    }
   }
 
-  async search(namespace: string, query: string, limit?: number): Promise<KnowledgeEntry[]> {
-    const filter: RetrievalFilter = {
-      equals: {
-        key: this._namespaceMetadataKey,
-        value: namespace,
-      },
-    }
+  async search(query: string, options?: Record<string, unknown>): Promise<KnowledgeEntry[]> {
+    const limit = typeof options?.limit === 'number' ? options.limit : 10
 
     const response = await this._runtimeClient.send(
       new RetrieveCommand({
@@ -56,38 +66,36 @@ export class BedrockKnowledgeBaseStore implements KnowledgeStore, MutableKnowled
         retrievalQuery: { text: query },
         retrievalConfiguration: {
           vectorSearchConfiguration: {
-            numberOfResults: limit ?? 10,
-            filter,
+            numberOfResults: limit,
+            ...(this._filter && { filter: this._filter }),
           },
         },
       })
     )
 
     return (response.retrievalResults ?? []).map((result, index) => {
-      const metadata: Record<string, JSONValue> = {}
+      const metadata: Record<string, unknown> = {}
       if (result.metadata) {
         for (const [key, value] of Object.entries(result.metadata)) {
-          metadata[key] = value as JSONValue
+          metadata[key] = value
         }
       }
       if (result.location) {
-        metadata._location = result.location as unknown as JSONValue
-      }
-
-      const entry: KnowledgeEntry = {
-        id: this._resolveId(result.location?.customDocumentLocation?.id, result.metadata, index),
-        content: result.content?.text ?? '',
-        namespace,
-        metadata,
+        metadata._location = result.location
       }
       if (result.score != null) {
-        entry.score = result.score
+        metadata.score = result.score
       }
-      return entry
+
+      return {
+        id: this._resolveId(result.location?.customDocumentLocation?.id, result.metadata, index),
+        content: result.content?.text ?? '',
+        metadata,
+      }
     })
   }
 
-  async store(namespace: string, content: string, metadata?: Record<string, JSONValue>): Promise<string> {
+  async add(content: string, metadata?: Record<string, unknown>): Promise<void> {
     const dataSourceId = this._requireDataSourceId()
     const id = uuidv7()
 
@@ -97,12 +105,14 @@ export class BedrockKnowledgeBaseStore implements KnowledgeStore, MutableKnowled
         | { type: 'STRING'; stringValue: string }
         | { type: 'NUMBER'; numberValue: number }
         | { type: 'BOOLEAN'; booleanValue: boolean }
-    }> = [
-      {
-        key: this._namespaceMetadataKey,
-        value: { type: 'STRING' as const, stringValue: namespace },
-      },
-    ]
+    }> = []
+
+    if (this._scope) {
+      inlineAttributes.push({
+        key: this._scopeMetadataKey,
+        value: { type: 'STRING' as const, stringValue: this._scope },
+      })
+    }
 
     if (metadata) {
       for (const [key, value] of Object.entries(metadata)) {
@@ -150,11 +160,9 @@ export class BedrockKnowledgeBaseStore implements KnowledgeStore, MutableKnowled
         ],
       })
     )
-
-    return id
   }
 
-  async delete(namespace: string, id: string): Promise<void> {
+  async delete(id: string): Promise<void> {
     const dataSourceId = this._requireDataSourceId()
 
     await this._getAgentClient().send(
@@ -175,7 +183,7 @@ export class BedrockKnowledgeBaseStore implements KnowledgeStore, MutableKnowled
     if (!this._dataSourceId) {
       throw new Error(
         'BedrockKnowledgeBaseStore: dataSourceId is required for write operations. ' +
-          'Provide it in the config to enable store() and delete().'
+          'Provide it in the config to enable add() and delete().'
       )
     }
     return this._dataSourceId

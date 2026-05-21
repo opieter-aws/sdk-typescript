@@ -287,15 +287,28 @@ export { AgentMetrics } from './telemetry/meter.js'
 // Memory
 export type {
   KnowledgeStore,
-  MutableKnowledgeStore,
   KnowledgeEntry,
   Extractor,
   ExtractedKnowledge,
-  MemoryManagerConfig,
-  StoreConfig,
+  IngestionTrigger,
+  ContentBlockType,
+  MessageFilter,
   IngestionConfig,
+  StoreConfig,
+  InjectionConfig,
+  ToolConfig,
+  ToolsConfig,
+  MemoryManagerConfig,
 } from './memory/index.js'
-export { InMemoryKnowledgeStore, FileKnowledgeStore, ModelExtractor, MemoryManager } from './memory/index.js'
+export {
+  hasAdd,
+  hasDelete,
+  InMemoryKnowledgeStore,
+  FileKnowledgeStore,
+  BedrockKnowledgeBaseStore,
+  ModelExtractor,
+  MemoryManager,
+} from './memory/index.js'
 
 // Multi-agent orchestration
 export { Graph } from './multiagent/index.js'

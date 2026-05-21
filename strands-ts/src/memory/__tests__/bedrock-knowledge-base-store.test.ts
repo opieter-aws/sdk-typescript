@@ -37,14 +37,15 @@ describe('BedrockKnowledgeBaseStore', () => {
     store = new BedrockKnowledgeBaseStore({
       knowledgeBaseId: 'kb-123',
       dataSourceId: 'ds-456',
+      scope: 'user-abc',
     })
   })
 
   describe('search', () => {
-    it('should call Retrieve API with correct parameters', async () => {
+    it('should call Retrieve API with scope filter and limit from options', async () => {
       mockRuntimeSend.mockResolvedValue({ retrievalResults: [] })
 
-      await store.search('user-abc', 'what is the refund policy', 5)
+      await store.search('what is the refund policy', { limit: 5 })
 
       const command = mockRuntimeSend.mock.calls[0]![0]
       expect(command.input).toEqual({
@@ -61,14 +62,15 @@ describe('BedrockKnowledgeBaseStore', () => {
       })
     })
 
-    it('should use custom namespaceMetadataKey', async () => {
+    it('should use custom scopeMetadataKey', async () => {
       const customStore = new BedrockKnowledgeBaseStore({
         knowledgeBaseId: 'kb-456',
-        namespaceMetadataKey: 'tenant_id',
+        scope: 'tenant-xyz',
+        scopeMetadataKey: 'tenant_id',
       })
       mockRuntimeSend.mockResolvedValue({ retrievalResults: [] })
 
-      await customStore.search('tenant-xyz', 'query')
+      await customStore.search('query')
 
       const command = mockRuntimeSend.mock.calls[0]![0]
       expect(command.input.retrievalConfiguration.vectorSearchConfiguration.filter).toEqual({
@@ -76,7 +78,19 @@ describe('BedrockKnowledgeBaseStore', () => {
       })
     })
 
-    it('should map results to KnowledgeEntry format', async () => {
+    it('should not include filter when no scope is configured', async () => {
+      const noScopeStore = new BedrockKnowledgeBaseStore({
+        knowledgeBaseId: 'kb-789',
+      })
+      mockRuntimeSend.mockResolvedValue({ retrievalResults: [] })
+
+      await noScopeStore.search('query')
+
+      const command = mockRuntimeSend.mock.calls[0]![0]
+      expect(command.input.retrievalConfiguration.vectorSearchConfiguration.filter).toBeUndefined()
+    })
+
+    it('should map results to KnowledgeEntry format with score in metadata', async () => {
       mockRuntimeSend.mockResolvedValue({
         retrievalResults: [
           {
@@ -100,28 +114,26 @@ describe('BedrockKnowledgeBaseStore', () => {
         ],
       })
 
-      const results = await store.search('user-abc', 'refund')
+      const results = await store.search('refund')
 
       expect(results).toHaveLength(2)
       expect(results[0]).toEqual({
         id: 'doc-001',
         content: 'Refunds take 5-7 business days.',
-        namespace: 'user-abc',
-        score: 0.92,
         metadata: {
           category: 'policy',
           namespace: 'user-abc',
           _location: { type: 'CUSTOM', customDocumentLocation: { id: 'doc-001' } },
+          score: 0.92,
         },
       })
       expect(results[1]).toEqual({
         id: 'result-1',
         content: 'Contact support for refund requests.',
-        namespace: 'user-abc',
-        score: 0.85,
         metadata: {
           category: 'support',
           _location: { type: 'S3', s3Location: { uri: 's3://bucket/support.pdf' } },
+          score: 0.85,
         },
       })
     })
@@ -138,7 +150,7 @@ describe('BedrockKnowledgeBaseStore', () => {
         ],
       })
 
-      const results = await store.search('ns', 'query')
+      const results = await store.search('query')
       expect(results[0]!.id).toBe('meta-id-123')
     })
 
@@ -153,14 +165,14 @@ describe('BedrockKnowledgeBaseStore', () => {
         ],
       })
 
-      const results = await store.search('ns', 'query')
+      const results = await store.search('query')
       expect(results[0]!.id).toBe('result-0')
     })
 
     it('should default limit to 10 when not specified', async () => {
       mockRuntimeSend.mockResolvedValue({ retrievalResults: [] })
 
-      await store.search('ns', 'query')
+      await store.search('query')
 
       const command = mockRuntimeSend.mock.calls[0]![0]
       expect(command.input.retrievalConfiguration.vectorSearchConfiguration.numberOfResults).toBe(10)
@@ -169,7 +181,7 @@ describe('BedrockKnowledgeBaseStore', () => {
     it('should handle empty retrievalResults', async () => {
       mockRuntimeSend.mockResolvedValue({ retrievalResults: undefined })
 
-      const results = await store.search('ns', 'query')
+      const results = await store.search('query')
       expect(results).toEqual([])
     })
 
@@ -180,18 +192,17 @@ describe('BedrockKnowledgeBaseStore', () => {
         runtimeClient: customClient as any,
       })
 
-      await storeWithClient.search('ns', 'test')
+      await storeWithClient.search('test')
       expect(customClient.send).toHaveBeenCalledOnce()
     })
   })
 
-  describe('store', () => {
-    it('should call IngestKnowledgeBaseDocuments with inline text', async () => {
+  describe('add', () => {
+    it('should call IngestKnowledgeBaseDocuments with inline text and scope', async () => {
       mockAgentSend.mockResolvedValue({ documentDetails: [] })
 
-      const id = await store.store('user-abc', 'User prefers dark mode')
+      await store.add('User prefers dark mode')
 
-      expect(id).toBe('mock-uuid-v7')
       const command = mockAgentSend.mock.calls[0]![0]
       expect(command.input).toEqual({
         knowledgeBaseId: 'kb-123',
@@ -221,7 +232,7 @@ describe('BedrockKnowledgeBaseStore', () => {
     it('should include metadata as inline attributes', async () => {
       mockAgentSend.mockResolvedValue({ documentDetails: [] })
 
-      await store.store('user-abc', 'A fact', { category: 'preferences', _source: 'tool' })
+      await store.add('A fact', { category: 'preferences', _source: 'tool' })
 
       const command = mockAgentSend.mock.calls[0]![0]
       const attrs = command.input.documents[0].metadata.inlineAttributes
@@ -230,14 +241,27 @@ describe('BedrockKnowledgeBaseStore', () => {
       expect(attrs).toContainEqual({ key: '_source', value: { type: 'STRING', stringValue: 'tool' } })
     })
 
+    it('should not include scope attribute when no scope configured', async () => {
+      const noScopeStore = new BedrockKnowledgeBaseStore({
+        knowledgeBaseId: 'kb-123',
+        dataSourceId: 'ds-456',
+      })
+      mockAgentSend.mockResolvedValue({ documentDetails: [] })
+
+      await noScopeStore.add('A fact', { category: 'test' })
+
+      const command = mockAgentSend.mock.calls[0]![0]
+      const attrs = command.input.documents[0].metadata.inlineAttributes
+      expect(attrs).not.toContainEqual(expect.objectContaining({ key: 'namespace' }))
+      expect(attrs).toContainEqual({ key: 'category', value: { type: 'STRING', stringValue: 'test' } })
+    })
+
     it('should throw if dataSourceId is not configured', async () => {
       const readOnlyStore = new BedrockKnowledgeBaseStore({
         knowledgeBaseId: 'kb-123',
       })
 
-      await expect(readOnlyStore.store('ns', 'content')).rejects.toThrow(
-        'dataSourceId is required for write operations'
-      )
+      await expect(readOnlyStore.add('content')).rejects.toThrow('dataSourceId is required for write operations')
     })
   })
 
@@ -245,7 +269,7 @@ describe('BedrockKnowledgeBaseStore', () => {
     it('should call DeleteKnowledgeBaseDocuments with custom document id', async () => {
       mockAgentSend.mockResolvedValue({ documentDetails: [] })
 
-      await store.delete('user-abc', 'doc-789')
+      await store.delete('doc-789')
 
       const command = mockAgentSend.mock.calls[0]![0]
       expect(command.input).toEqual({
@@ -265,7 +289,7 @@ describe('BedrockKnowledgeBaseStore', () => {
         knowledgeBaseId: 'kb-123',
       })
 
-      await expect(readOnlyStore.delete('ns', 'id')).rejects.toThrow('dataSourceId is required for write operations')
+      await expect(readOnlyStore.delete('id')).rejects.toThrow('dataSourceId is required for write operations')
     })
   })
 })

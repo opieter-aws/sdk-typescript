@@ -368,7 +368,12 @@ export class MemoryManager implements Plugin {
       ? z.object({
           query: z.string().describe('What to search for'),
           limit: z.number().optional().describe('Maximum number of results'),
-          stores: z.array(z.string()).optional().describe('Store names to search. Omit to search all.'),
+          stores: z
+            .array(z.string())
+            .optional()
+            .describe(
+              'Target one or more memory stores by name if you know which domains are relevant, or omit to search all.'
+            ),
         })
       : z.object({
           query: z.string().describe('What to search for'),

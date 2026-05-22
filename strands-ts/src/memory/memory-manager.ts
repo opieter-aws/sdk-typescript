@@ -42,12 +42,12 @@ export class MemoryManager implements Plugin {
   constructor(config: MemoryManagerConfig) {
     this._stores = config.stores
 
-    if (config.tools === false) {
+    if (config.includeTools === false) {
       this._toolsConfig = false
-    } else if (config.tools === true || config.tools === undefined) {
+    } else if (config.includeTools === true || config.includeTools === undefined) {
       this._toolsConfig = {}
     } else {
-      this._toolsConfig = config.tools
+      this._toolsConfig = config.includeTools
     }
 
     if (config.injection === true) {
@@ -89,9 +89,13 @@ export class MemoryManager implements Plugin {
     return tools
   }
 
-  async search(query: string, options?: { limit?: number }): Promise<KnowledgeEntry[]> {
+  async search(query: string, options?: { limit?: number; stores?: string[] }): Promise<KnowledgeEntry[]> {
+    const targetStores = options?.stores?.length
+      ? this._stores.filter((s) => s.name && options.stores!.includes(s.name))
+      : this._stores
+
     const settled = await Promise.allSettled(
-      this._stores.map(async (config) => {
+      targetStores.map(async (config) => {
         return config.store.search(query, { limit: config.limit ?? 10 })
       })
     )
@@ -349,17 +353,38 @@ export class MemoryManager implements Plugin {
   }
 
   private _createSearchTool(config?: { name?: string; description?: string }): Tool {
+    let description = config?.description ?? DEFAULT_SEARCH_DESCRIPTION
+    const storeDescriptions = this._stores
+      .filter((s) => s.name || s.description)
+      .map((s) => `- ${s.name ?? 'unnamed'}${s.description ? `: ${s.description}` : ''}`)
+    if (storeDescriptions.length > 0) {
+      description += `\n\nAvailable memory stores:\n${storeDescriptions.join('\n')}`
+    }
+
+    const storeNames = this._stores.filter((s) => s.name).map((s) => s.name!)
+    const hasNamedStores = storeNames.length > 0
+
+    const schema = hasNamedStores
+      ? z.object({
+          query: z.string().describe('What to search for'),
+          limit: z.number().optional().describe('Maximum number of results'),
+          stores: z.array(z.string()).optional().describe('Store names to search. Omit to search all.'),
+        })
+      : z.object({
+          query: z.string().describe('What to search for'),
+          limit: z.number().optional().describe('Maximum number of results'),
+        })
+
     return tool({
       name: config?.name ?? 'search_memory',
-      description: config?.description ?? DEFAULT_SEARCH_DESCRIPTION,
-      inputSchema: z.object({
-        query: z.string().describe('What to search for'),
-        limit: z.number().optional().describe('Maximum number of results'),
-      }),
+      description,
+      inputSchema: schema,
       callback: async (input) => {
-        logger.debug(`search_memory query="${input.query}" limit=${input.limit}`)
-        const options: { limit?: number } = {}
+        const stores = 'stores' in input ? (input.stores as string[] | undefined) : undefined
+        logger.debug(`search_memory query="${input.query}" limit=${input.limit} stores=${stores?.join(',') ?? 'all'}`)
+        const options: { limit?: number; stores?: string[] } = {}
         if (input.limit !== undefined) options.limit = input.limit
+        if (stores?.length) options.stores = stores
         const results = await this.search(input.query, options)
         logger.debug(`search_memory returned ${results.length} results`)
         return results as unknown as ReturnType<typeof JSON.parse>

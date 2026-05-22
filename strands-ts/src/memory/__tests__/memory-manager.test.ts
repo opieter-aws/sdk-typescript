@@ -494,7 +494,7 @@ describe('MemoryManager', () => {
     it('should return empty when tools disabled', () => {
       const manager = new MemoryManager({
         stores: [{ store: store1, ingestion: { trigger: 'tool' } }],
-        tools: false,
+        includeTools: false,
       })
 
       expect(manager.getTools()).toHaveLength(0)
@@ -1030,7 +1030,7 @@ describe('MemoryManager', () => {
     it('should use custom search tool name and description', () => {
       const manager = new MemoryManager({
         stores: [{ store: store1, ingestion: { trigger: 'tool' } }],
-        tools: { search: { name: 'recall', description: 'Custom search desc' } },
+        includeTools: { search: { name: 'recall', description: 'Custom search desc' } },
       })
 
       const tools = manager.getTools()
@@ -1042,7 +1042,7 @@ describe('MemoryManager', () => {
     it('should use custom store tool name and description', () => {
       const manager = new MemoryManager({
         stores: [{ store: store1, ingestion: { trigger: 'tool' } }],
-        tools: { store: { name: 'remember', description: 'Custom store desc' } },
+        includeTools: { store: { name: 'remember', description: 'Custom store desc' } },
       })
 
       const tools = manager.getTools()
@@ -1054,7 +1054,7 @@ describe('MemoryManager', () => {
     it('should disable search tool when search is false', () => {
       const manager = new MemoryManager({
         stores: [{ store: store1, ingestion: { trigger: 'tool' } }],
-        tools: { search: false },
+        includeTools: { search: false },
       })
 
       const tools = manager.getTools()
@@ -1065,7 +1065,7 @@ describe('MemoryManager', () => {
     it('should disable store tool when store is false', () => {
       const manager = new MemoryManager({
         stores: [{ store: store1, ingestion: { trigger: 'tool' } }],
-        tools: { store: false },
+        includeTools: { store: false },
       })
 
       const tools = manager.getTools()
@@ -1076,7 +1076,7 @@ describe('MemoryManager', () => {
     it('should use default descriptions when ToolsConfig is empty object', () => {
       const manager = new MemoryManager({
         stores: [{ store: store1, ingestion: { trigger: 'tool' } }],
-        tools: {},
+        includeTools: {},
       })
 
       const tools = manager.getTools()
@@ -1084,6 +1084,95 @@ describe('MemoryManager', () => {
       const storeTool = tools.find((t) => t.name === 'store_memory')
       expect(searchTool!.description).toContain('Search long-term memory')
       expect(storeTool!.description).toContain('Store facts, preferences')
+    })
+
+    it('should include store names and descriptions in search tool description', () => {
+      const manager = new MemoryManager({
+        stores: [
+          {
+            store: store1,
+            name: 'user-prefs',
+            description: 'Personal facts and settings',
+            ingestion: { trigger: 'tool' },
+          },
+          { store: store2, name: 'project-context', description: 'Technical decisions and architecture' },
+        ],
+      })
+
+      const tools = manager.getTools()
+      const searchTool = tools.find((t) => t.name === 'search_memory')
+      expect(searchTool!.description).toContain('Available memory stores:')
+      expect(searchTool!.description).toContain('- user-prefs: Personal facts and settings')
+      expect(searchTool!.description).toContain('- project-context: Technical decisions and architecture')
+    })
+
+    it('should not append store list when no stores have names', () => {
+      const manager = new MemoryManager({
+        stores: [{ store: store1, ingestion: { trigger: 'tool' } }],
+      })
+
+      const tools = manager.getTools()
+      const searchTool = tools.find((t) => t.name === 'search_memory')
+      expect(searchTool!.description).not.toContain('Available memory stores:')
+    })
+  })
+
+  describe('store-targeted search', () => {
+    it('should search only named stores when stores option is provided', async () => {
+      await store1.add('fact in store1 about cats')
+      await store2.add('fact in store2 about cats')
+
+      const manager = new MemoryManager({
+        stores: [
+          { store: store1, name: 'prefs' },
+          { store: store2, name: 'context' },
+        ],
+      })
+
+      const results = await manager.search('cats', { stores: ['prefs'] })
+      expect(results).toHaveLength(1)
+      expect(results[0]!.content).toContain('store1')
+    })
+
+    it('should search all stores when stores option is omitted', async () => {
+      await store1.add('fact in store1 about dogs')
+      await store2.add('fact in store2 about dogs')
+
+      const manager = new MemoryManager({
+        stores: [
+          { store: store1, name: 'prefs' },
+          { store: store2, name: 'context' },
+        ],
+      })
+
+      const results = await manager.search('dogs')
+      expect(results).toHaveLength(2)
+    })
+
+    it('should search all stores when stores array is empty', async () => {
+      await store1.add('fact in store1 about birds')
+      await store2.add('fact in store2 about birds')
+
+      const manager = new MemoryManager({
+        stores: [
+          { store: store1, name: 'prefs' },
+          { store: store2, name: 'context' },
+        ],
+      })
+
+      const results = await manager.search('birds', { stores: [] })
+      expect(results).toHaveLength(2)
+    })
+
+    it('should return empty when store name does not match', async () => {
+      await store1.add('fact about fish')
+
+      const manager = new MemoryManager({
+        stores: [{ store: store1, name: 'prefs' }],
+      })
+
+      const results = await manager.search('fish', { stores: ['nonexistent'] })
+      expect(results).toHaveLength(0)
     })
   })
 })

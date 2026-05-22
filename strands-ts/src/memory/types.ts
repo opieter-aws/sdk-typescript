@@ -50,6 +50,8 @@ export interface IngestionConfig {
 
 export interface StoreConfig {
   store: KnowledgeStore
+  name?: string
+  description?: string
   limit?: number
   ingestion?: IngestionConfig
 }
@@ -72,6 +74,6 @@ export interface ToolsConfig {
 
 export interface MemoryManagerConfig {
   stores: StoreConfig[]
-  tools?: boolean | ToolsConfig
+  includeTools?: boolean | ToolsConfig
   injection?: boolean | InjectionConfig
 }

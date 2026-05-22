@@ -323,11 +323,12 @@ export class Agent implements LocalAgent, InvokableAgent {
     this.id = config?.id ?? DEFAULT_AGENT_ID
     if (config?.description !== undefined) this.description = config.description
     this.sessionManager = config?.sessionManager
-    this.memoryManager = config?.memoryManager instanceof MemoryManager
-      ? config.memoryManager
-      : config?.memoryManager
-        ? new MemoryManager(config.memoryManager)
-        : undefined
+    this.memoryManager =
+      config?.memoryManager instanceof MemoryManager
+        ? config.memoryManager
+        : config?.memoryManager
+          ? new MemoryManager(config.memoryManager)
+          : undefined
 
     if (typeof config?.model === 'string') {
       this.model = new BedrockModel({ modelId: config.model })
